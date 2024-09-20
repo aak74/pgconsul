@@ -1848,11 +1848,12 @@ class pgconsul(object):
                 continue
             if replica.get('application_name', '') != helpers.app_name_from_fqdn(switchover_candidate):
                 continue
-            replay_lag = replica.get('replay_location_diff', -1)
-            if replay_lag != 0:
+            replay_lag = replica.get('replay_lag', -1)
+            logging.info(f"Replica {switchover_candidate} replay lag is {replay_lag} seconds"
+            if replay_lag > 10:
                 if not self.config.getboolean('replica', 'allow_potential_data_loss'):
                     logging.warning(
-                        f"Replica {switchover_candidate} has replay lag {replay_lag} so cannot be primary for switchover"
+                        f"Replica {switchover_candidate} has replay lag {replay_lag}s so cannot be primary for switchover, max 10 second"
                     )
                     return None
                 else:
