@@ -5,6 +5,7 @@ Various utility functions:
     - Scheduled switchover
 """
 import argparse
+from datetime import datetime
 import functools
 import json
 import yaml
@@ -16,6 +17,7 @@ from . import read_config, init_logging, zk as zookeeper
 from . import helpers
 from . import utils
 from .exceptions import SwitchoverException, FailoverException, ResetException
+from .process_storage import ProcessStorage
 
 
 class ParseHosts(argparse.Action):
@@ -241,7 +243,27 @@ def _show_info(opts, conf):
         }
 
     db_state = _get_db_state(conf)
-    return {**db_state, **zk_state}
+    last_switchover = _last_switchover(zk)
+    return {**db_state, **zk_state, **last_switchover}
+
+
+def _last_switchover(zk: zookeeper.Zookeeper):
+    if zk.exists(ProcessStorage.PROCESS_SWITCHOVER):
+        process_info = ProcessStorage(zk).get_process_info('switchover')
+        return {"last_switchover": {
+            "age": {
+                "start_time": datetime.fromtimestamp(process_info["ts_start"]),
+                "end_time": datetime.fromtimestamp(process_info["ts_end"]),
+                "duration": process_info["duration"],
+            },
+            "destination": {
+                "host_from": process_info["host_from"],
+                "host_to": process_info["host_to"],
+            },
+            "stages": process_info["stages"],
+        }}
+    
+    return {"last_switchover": None}
 
 
 def _get_db_state(conf):

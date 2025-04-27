@@ -16,13 +16,18 @@ import traceback
 
 import psycopg2
 
+
+
 from . import helpers, sdnotify
 from .command_manager import CommandManager
 from .failover_election import ElectionError, FailoverElection
 from .helpers import IterationTimer, get_hostname
+from .process_storage import ProcessStorage
 from .pg import Postgres
 from .plugin import PluginRunner, load_plugins
+from .process import Process
 from .replication_manager import QuorumReplicationManager, SingleSyncReplicationManager
+from .switchover import Switchover
 from .zk import Zookeeper, ZookeeperException
 
 
@@ -39,6 +44,7 @@ class pgconsul(object):
         self._cmd_manager = CommandManager(self.config)
         self._should_run = True
         self.is_in_maintenance = False
+        self._current_process: Process | None = None
 
         random.seed(os.urandom(16))
 
@@ -737,7 +743,7 @@ class pgconsul(object):
                 logging.error(line.rstrip())
             return None
 
-    def _accept_switchover(self, lock_holder, previous_primary):
+    def _accept_switchover(self, lock_holder: str, previous_primary: str):
         if not self._can_do_switchover():
             return None
 
@@ -758,6 +764,11 @@ class pgconsul(object):
         ):
             return None
 
+        self._current_process = Switchover()
+        self._current_process.start_stage(Switchover.INIT)
+        self._current_process.host_from = current_primary
+        logging.debug(f'ak74 1 {self._current_process=}')
+
         # Wait switchover_master_shut state only if current primary is alive, i.e. lock holder exists.
         if lock_holder is not None and not helpers.await_for(
             lambda: self.zk.get(self.zk.FAILOVER_INFO_PATH) == 'switchover_master_shut',
@@ -776,6 +787,14 @@ class pgconsul(object):
         if not self._do_failover():
             return False
 
+        self._current_process.host_to = helpers.get_hostname()
+        self._current_process.stop()
+        logging.debug(f'ak74 2 {self._current_process=}')
+        ProcessStorage(self.zk).write_process_info(self._current_process)
+        
+        data = ProcessStorage(self.zk).get_process_info(self._current_process.name)
+        logging.debug(f'ak74 3 {data=}')
+        
         self._cleanup_switchover()
         self.zk.write(self.zk.LAST_SWITCHOVER_TIME_PATH, time.time())
 
@@ -1833,6 +1852,8 @@ class pgconsul(object):
         """
         logging.warning('Starting scheduled switchover')
         self.zk.write(self.zk.SWITCHOVER_STATE_PATH, 'initiated')
+        self._current_event = Switchover()
+        self._current_event.start_stage('init')
         # Deny user requests
         logging.warning('Starting checkpoint')
         self.db.checkpoint()
@@ -1840,6 +1861,8 @@ class pgconsul(object):
         logging.warning('cluster was closed from user requests')
         # check once more if replica is sync with primary
         limit = self.config.getfloat('global', 'postgres_timeout')
+        self._current_event.stop_stage('init')
+        self._current_event.start_stage('election')
         switchover_candidate = self._get_switchover_candidate()
         if not helpers.await_for(
             lambda: self._candidate_is_sync_with_primary_with_get_state(switchover_candidate=switchover_candidate),

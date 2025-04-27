@@ -73,7 +73,7 @@ class Zookeeper(object):
     MEMBERS_PATH = 'all_hosts'
     SIMPLE_PRIMARY_SWITCH_TRY_PATH = f'{MEMBERS_PATH}/%s/tried_remaster'
     HOST_PRIO_PATH = f'{MEMBERS_PATH}/%s/prio'
-
+    
     def __init__(self, config, plugins):
         self._plugins = plugins
         self._zk_hosts = config.get('global', 'zk_hosts')
@@ -291,6 +291,8 @@ class Zookeeper(object):
         self._init_lock(self.PRIMARY_LOCK_PATH)
         return True
 
+    def exists(self, key: str) -> bool:
+        return self._zk.exists(self._path_prefix + key)
 
     def get(self, key, preproc=None, debug=False):
         """
