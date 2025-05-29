@@ -1455,7 +1455,9 @@ class pgconsul(object):
         if not allow_data_loss and not is_promote_safe:
             logging.warning('Promote is not allowed with given configuration.')
             return False
+
         self.db.pg_wal_replay_pause()
+        # self._stop_wal_receiving()
         election_timeout = self.config.getint('global', 'election_timeout')
         priority = self.config.getint('global', 'priority')
         election = FailoverElection(
@@ -1470,7 +1472,13 @@ class pgconsul(object):
             len(helpers.make_current_replics_quorum(replica_infos, self.zk.get_alive_hosts(all_hosts_timeout=election_timeout / 3))),
         )
         try:
-            return election.make_election()
+            result = election.make_election()
+            election_loser_timeout = self.config.getint('global', 'election_loser_timeout')
+            # for not a winner and test purposes
+            if not result and election_loser_timeout > 0:
+                logging.debug('ak74 election_loser_timeout %s' % election_loser_timeout)
+                time.sleep(election_loser_timeout)
+            return result
         except (ZookeeperException, ElectionError):
             for line in traceback.format_exc().split('\n'):
                 logging.error(line.rstrip())
