@@ -207,3 +207,116 @@ def step_zk_remove_key(context, key, name):
     finally:
         zk.stop()
         zk.close()
+
+
+@when('we switch zookeeper in container "(?P<name>[a-zA-Z0-9_-]+)" to version "(?P<version>[.0-9]+)"')
+def step_switch_zk_version(context, name, version):
+    container = context.containers[name]
+    commands = [
+        ('supervisorctl stop zookeeper', True),
+        ('rm -f /opt/zookeeper', False),
+        ('ln -s /opt/zookeeper-{version} /opt/zookeeper'.format(version=version), False),
+        ('supervisorctl start zookeeper', False),
+    ]
+
+    for cmd, allow_fail in commands:
+        result = container.exec_run(cmd)
+        helpers.LOG.debug(
+            'switch_zk %s to %s: cmd=%s, exit_code=%s, output=%s',
+            name,
+            version,
+            cmd,
+            result.exit_code,
+            result.output.decode() if result.output else '',
+        )
+        if not allow_fail:
+            assert result.exit_code == 0, '{time}: Command "{cmd}" failed: exit_code={code}, output={out}'.format(
+                time=datetime.now().strftime("%H:%M:%S"),
+                cmd=cmd,
+                code=result.exit_code,
+                out=result.output.decode() if result.output else '',
+            )
+
+
+@then('zookeeper "(?P<name>[a-zA-Z0-9_-]+)" is running version "(?P<version>[.0-9]+)"')
+@helpers.retry_on_assert
+def step_zk_check_version(context, name, version):
+    container = context.containers[name]
+    script = (
+        'import socket\n'
+        's=socket.socket()\n'
+        's.settimeout(5)\n'
+        's.connect(("localhost",2181))\n'
+        's.sendall(b"srvr")\n'
+        'print(s.recv(4096).decode())\n'
+        's.close()\n'
+    )
+    result = container.exec_run(['python3', '-c', script])
+    output = result.output.decode('utf-8') if result.output else ''
+
+    for line in output.split('\n'):
+        if line.startswith('Zookeeper version:'):
+            actual_version = line.split(':')[1].strip().split('-')[0]
+            assert actual_version == version, '{time}: Expected ZK version {exp}, got {act}'.format(
+                time=datetime.now().strftime("%H:%M:%S"),
+                exp=version,
+                act=actual_version,
+            )
+            return
+
+    raise AssertionError(
+        '{time}: Could not determine ZK version from srvr output: {out}'.format(
+            time=datetime.now().strftime("%H:%M:%S"),
+            out=output,
+        )
+    )
+
+
+@when('we restart zookeeper leader')
+def step_restart_zk_leader(context):
+    helpers.LOG.debug('step_restart_zk_leader: searching for leader...')
+    leader = _find_zk_leader(context)
+    helpers.LOG.debug('found leader: %s', leader)
+    assert leader is not None, '{time}: no zookeeper leader found'.format(time=datetime.now().strftime("%H:%M:%S"))
+    helpers.LOG.debug('restarting zookeeper leader: %s', leader)
+    container = context.containers[leader]
+    result = container.exec_run("/usr/local/bin/supervisorctl restart zookeeper")
+    output = result.output.decode('utf-8') if result.output else 'None'
+    helpers.LOG.debug('supervisorctl restart result: exit_code=%s, output=%s', result.exit_code, output)
+
+
+def _get_zk_mode_via_exec(container, name: str, port: int = 2181) -> str:
+    try:
+        script = (
+            'import socket\n'
+            's=socket.socket()\n'
+            's.settimeout(5)\n'
+            f's.connect(("localhost",{port}))\n'
+            's.sendall(b"srvr")\n'
+            'print(s.recv(4096).decode())\n'
+            's.close()\n'
+        )
+        result = container.exec_run(['python3', '-c', script])
+        exit_code = result.exit_code
+        output = result.output.decode('utf-8') if result.output else ''
+
+        if exit_code != 0:
+            return 'unknown'
+
+        for line in output.split('\n'):
+            if line.startswith('Mode:'):
+                return line.split(':', 1)[1].strip()
+    except Exception as e:
+        helpers.LOG.debug('get_zk_mode_via_exec: error = %s, name=%s', e, name)
+    return 'unknown'
+
+
+def _find_zk_leader(context) -> str | None:
+    for name, container in context.containers.items():
+        if not name.startswith('zookeeper'):
+            continue
+        mode = _get_zk_mode_via_exec(container, name)
+        helpers.LOG.debug('zookeeper %s: mode=%s', name, mode)
+        if mode == 'leader':
+            return name
+    return None

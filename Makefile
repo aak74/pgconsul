@@ -4,8 +4,10 @@ PG_MAJOR=14
 
 PGCONSUL_IMAGE=pgconsul:behave
 PROJECT=pgconsul
-ZK_VERSION=3.7.2
+ZK_VERSION=3.9.4
+ZK_OLD_VERSION=3.7.2
 export ZK_VERSION
+export ZK_OLD_VERSION
 INSTALL_DIR=$(DESTDIR)/opt/yandex/pgconsul
 REPLICATION_TYPE=quorum
 
@@ -55,6 +57,7 @@ build:
 	cp -f docker/base/Dockerfile .
 	yes | ssh-keygen -m PEM -t rsa -N '' -f test_ssh_key -C jepsen || true
 	wget https://dlcdn.apache.org/zookeeper/zookeeper-$(ZK_VERSION)/apache-zookeeper-$(ZK_VERSION)-bin.tar.gz -nc -O docker/zookeeper/zookeeper-$(ZK_VERSION).tar.gz || true
+	wget https://archive.apache.org/dist/zookeeper/zookeeper-$(ZK_OLD_VERSION)/apache-zookeeper-$(ZK_OLD_VERSION)-bin.tar.gz -nc -O docker/zookeeper/zookeeper-$(ZK_OLD_VERSION).tar.gz || true
 	docker compose -p $(PROJECT) down --rmi all --remove-orphans
 	docker compose -p $(PROJECT) -f jepsen-compose.yml down --rmi all --remove-orphans
 	docker build -t pgconsulbase:latest . --label pgconsul_tests

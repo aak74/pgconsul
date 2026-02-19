@@ -35,6 +35,13 @@ CONFIG_ENVS = {
 CONTAINER_PORTS = {'pgconsul': ['5432', '6432'], 'zookeeper': ['2181', '2281', '2188', '2189'], 'backup': ['873']}
 
 LOG = logging.getLogger('helpers')
+LOG.setLevel(logging.DEBUG)
+LOG.propagate = False
+if not LOG.handlers:
+    _file_handler = logging.FileHandler('/tmp/pgconsul_debug.log')
+    _file_handler.setLevel(logging.DEBUG)
+    _file_handler.setFormatter(logging.Formatter('[%(levelname)s] %(asctime)s: %(message)s', datefmt='%H:%M:%S'))
+    LOG.addHandler(_file_handler)
 
 DB_SHUTDOWN_MESSAGE = 'database system is shut down'
 DB_READY_MESSAGE = 'database system is ready to accept'

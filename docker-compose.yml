@@ -6,6 +6,7 @@ services:
       context: ./docker/zookeeper
       args:
         - VERSION=${ZK_VERSION}
+        - OLD_VERSION=${ZK_OLD_VERSION}
     privileged: true
     hostname: pgconsul_zookeeper1_1
     domainname: pgconsul_pgconsul_net
@@ -18,6 +19,7 @@ services:
       context: ./docker/zookeeper
       args:
         - VERSION=${ZK_VERSION}
+        - OLD_VERSION=${ZK_OLD_VERSION}
     privileged: true
     hostname: pgconsul_zookeeper2_1
     domainname: pgconsul_pgconsul_net
@@ -30,6 +32,7 @@ services:
       context: ./docker/zookeeper
       args:
         - VERSION=${ZK_VERSION}
+        - OLD_VERSION=${ZK_OLD_VERSION}
     privileged: true
     hostname: pgconsul_zookeeper3_1
     domainname: pgconsul_pgconsul_net
